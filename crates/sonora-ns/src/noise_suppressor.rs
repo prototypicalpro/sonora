@@ -6,8 +6,10 @@
 //!
 //! C++ source: `webrtc/modules/audio_processing/ns/noise_suppressor.cc`
 
+use libm::Libm;
+
 use crate::config::{
-    FFT_SIZE, FFT_SIZE_BY_2_PLUS_1, NS_FRAME_SIZE, NsConfig, OVERLAP_SIZE, SuppressionLevel,
+    FFT_SIZE, FFT_SIZE_BY_2_PLUS_1, NS_FRAME_SIZE, NsConfig, OVERLAP_SIZE, SuppressionLevel
 };
 use crate::fast_math::sqrt_fast_approximation;
 use crate::noise_estimator::NoiseEstimator;
@@ -178,7 +180,7 @@ fn compute_upper_band_gain(
     avg_prob_speech *= sum_processing_spectrum / sum_analysis_spectrum;
 
     // Compute gain based on speech probability.
-    let mut gain = 0.5 * (1.0 + (2.0 * avg_prob_speech - 1.0).tanh());
+    let mut gain = 0.5 * (1.0 + Libm::<f32>::tanh(2.0 * avg_prob_speech - 1.0));
 
     // Combine with low band filter gain.
     if avg_prob_speech >= 0.5 {
@@ -202,12 +204,13 @@ struct ChannelState {
     process_analysis_memory: [f32; OVERLAP_SIZE],
     process_synthesis_memory: [f32; OVERLAP_SIZE],
     /// Delay buffers for upper bands (one per upper band).
-    process_delay_memory: Vec<[f32; OVERLAP_SIZE]>,
+    process_delay_memory: [[f32; OVERLAP_SIZE]; 2]
 }
 
 impl ChannelState {
     fn new(suppression_params: &'static SuppressionParams, num_bands: usize) -> Self {
         let num_delay_buffers = num_bands.saturating_sub(1);
+        assert!(num_delay_buffers == 2);
         Self {
             speech_probability_estimator: SpeechProbabilityEstimator::default(),
             wiener_filter: WienerFilter::new(suppression_params),
@@ -216,7 +219,7 @@ impl ChannelState {
             analyze_analysis_memory: [0.0; FFT_SIZE - NS_FRAME_SIZE],
             process_analysis_memory: [0.0; OVERLAP_SIZE],
             process_synthesis_memory: [0.0; OVERLAP_SIZE],
-            process_delay_memory: vec![[0.0; OVERLAP_SIZE]; num_delay_buffers],
+            process_delay_memory: [[0.0; OVERLAP_SIZE]; _],
         }
     }
 }

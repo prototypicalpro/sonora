@@ -5,7 +5,7 @@
 //!
 //! C++ source: `webrtc/modules/audio_processing/ns/ns_fft.cc`
 
-use std::ops::Index;
+use core::ops::Index;
 
 #[cfg(feature = "sonora-fft")]
 use sonora_fft::fft4g::Fft4g;

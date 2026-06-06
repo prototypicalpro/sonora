@@ -6,6 +6,7 @@
 //!
 //! C++ source: `webrtc/modules/audio_processing/ns/quantile_noise_estimator.cc`
 
+use libm::Libm;
 use crate::config::{FFT_SIZE_BY_2_PLUS_1, LONG_STARTUP_PHASE_BLOCKS};
 use crate::fast_math::{exp_approximation_batch, log_approximation_batch};
 
@@ -37,7 +38,7 @@ impl Default for QuantileNoiseEstimator {
         let one_by_simult = 1.0 / SIMULT as f32;
         let mut counter = [0i32; SIMULT];
         for (i, c) in counter.iter_mut().enumerate() {
-            *c = (LONG_STARTUP_PHASE_BLOCKS as f32 * (i as f32 + 1.0) * one_by_simult).floor()
+            *c = Libm::<f32>::floor(LONG_STARTUP_PHASE_BLOCKS as f32 * (i as f32 + 1.0) * one_by_simult)
                 as i32;
         }
 

@@ -6,6 +6,8 @@
 //!
 //! C++ source: `webrtc/modules/audio_processing/ns/speech_probability_estimator.cc`
 
+use libm::Libm;
+
 use crate::config::{FFT_SIZE_BY_2_PLUS_1, LONG_STARTUP_PHASE_BLOCKS};
 use crate::fast_math::exp_approximation_sign_flip;
 use crate::signal_model_estimator::SignalModelEstimator;
@@ -72,7 +74,7 @@ impl SpeechProbabilityEstimator {
         };
 
         // Compute indicator function: sigmoid map.
-        let indicator0 = 0.5 * ((width_prior * (model.lrt - prior_model.lrt)).tanh() + 1.0);
+        let indicator0 = 0.5 * (Libm::<f32>::tanh(width_prior * (model.lrt - prior_model.lrt)) + 1.0);
 
         // Spectral flatness feature: use larger width in tanh map for pause regions.
         let width_prior = if model.spectral_flatness > prior_model.flatness_threshold {
@@ -83,7 +85,7 @@ impl SpeechProbabilityEstimator {
 
         // Compute indicator function: sigmoid map.
         let indicator1 = 0.5
-            * ((width_prior * (prior_model.flatness_threshold - model.spectral_flatness)).tanh()
+            * (Libm::<f32>::tanh(width_prior * (prior_model.flatness_threshold - model.spectral_flatness))
                 + 1.0);
 
         // For template spectrum-difference: use larger width in tanh map for
@@ -96,7 +98,7 @@ impl SpeechProbabilityEstimator {
 
         // Compute indicator function: sigmoid map.
         let indicator2 = 0.5
-            * ((width_prior * (model.spectral_diff - prior_model.template_diff_threshold)).tanh()
+            * (Libm::<f32>::tanh(width_prior * (model.spectral_diff - prior_model.template_diff_threshold))
                 + 1.0);
 
         // Combine the indicator function with the feature weights.

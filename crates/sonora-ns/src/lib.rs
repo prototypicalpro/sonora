@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![no_std]
 
 pub mod config;
 pub(crate) mod fast_math;

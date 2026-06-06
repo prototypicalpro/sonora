@@ -6,6 +6,8 @@
 //!
 //! C++ source: `webrtc/modules/audio_processing/ns/fast_math.cc`
 
+use libm::Libm;
+
 /// Fast log base 2 approximation using IEEE 754 float bit tricks.
 ///
 /// Extracts the exponent from the float representation and uses it
@@ -27,7 +29,7 @@ fn fast_log2f(x: f32) -> f32 {
 ///
 /// Currently delegates to `f32::sqrt()`.
 pub(crate) fn sqrt_fast_approximation(f: f32) -> f32 {
-    f.sqrt()
+    Libm::<f32>::sqrt(f)
 }
 
 /// Fast natural log approximation: `ln(x) ≈ log2(x) * ln(2)`.
@@ -47,7 +49,7 @@ pub(crate) fn log_approximation_batch(x: &[f32], y: &mut [f32]) {
 ///
 /// Currently delegates to `f32::exp2()`.
 pub(crate) fn pow2_approximation(p: f32) -> f32 {
-    p.exp2()
+    Libm::<f32>::exp2(p)
 }
 
 /// Fast x^p approximation: `x^p = 2^(p * log2(x))`.

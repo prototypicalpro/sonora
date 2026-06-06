@@ -267,7 +267,7 @@ impl FilterBankState {
 /// ns.process(&mut frame);
 /// ```
 #[derive(Debug)]
-pub struct NoiseSuppressor<F: FFTImpl + Default> {
+pub struct NoiseSuppressor<F> {
     num_analyzed_frames: i32,
     num_bands: usize,
     suppression_params: &'static SuppressionParams,
@@ -279,15 +279,15 @@ pub struct NoiseSuppressor<F: FFTImpl + Default> {
     cached_upper_band_gain: f32,
 }
 
-impl<F: FFTImpl + Default> NoiseSuppressor<F> {
+impl<F: FFTImpl> NoiseSuppressor<F> {
     /// Create a new single-band noise suppressor with the given configuration.
-    pub fn new(config: NsConfig) -> Self {
+    pub fn new(config: NsConfig, fft: F) -> Self {
         let suppression_params = SuppressionParams::for_level(config.target_level);
         Self {
             num_analyzed_frames: -1,
             num_bands: 1,
             suppression_params,
-            fft: F::default(),
+            fft,
             channel: ChannelState::new(suppression_params, 1),
             filter_bank_state: FilterBankState::new(),
             cached_upper_band_gain: 1.0,
@@ -300,13 +300,13 @@ impl<F: FFTImpl + Default> NoiseSuppressor<F> {
     /// 32 kHz, 3 for 48 kHz). When `num_bands > 1`, upper band delay
     /// buffers are allocated and [`upper_band_gain()`](Self::upper_band_gain) becomes meaningful
     /// after each [`process()`](Self::process) call.
-    pub fn new_with_bands(config: NsConfig, num_bands: usize) -> Self {
+    pub fn new_with_bands(config: NsConfig, num_bands: usize, fft: F) -> Self {
         let suppression_params = SuppressionParams::for_level(config.target_level);
         Self {
             num_analyzed_frames: -1,
             num_bands,
             suppression_params,
-            fft: F::default(),
+            fft,
             channel: ChannelState::new(suppression_params, num_bands),
             filter_bank_state: FilterBankState::new(),
             cached_upper_band_gain: 1.0,
@@ -314,10 +314,10 @@ impl<F: FFTImpl + Default> NoiseSuppressor<F> {
     }
 
     /// Create a noise suppressor with the given suppression level.
-    pub fn with_level(level: SuppressionLevel) -> Self {
+    pub fn with_level(level: SuppressionLevel, fft: F) -> Self {
         Self::new(NsConfig {
             target_level: level,
-        })
+        }, fft)
     }
 
     /// Analyze a frame for noise estimation.

@@ -17,9 +17,9 @@ use crate::suppression_params::SuppressionParams;
 use crate::wiener_filter::WienerFilter;
 
 /// Minimum 16-bit PCM sample value as float.
-const MIN_S16: f32 = -32768.0;
+const MIN_F32: f32 = -1.0;
 /// Maximum 16-bit PCM sample value as float.
-const MAX_S16: f32 = 32767.0;
+const MAX_F32: f32 = 1.0;
 
 /// Hybrid Hanning + flat window for the filterbank (first half, 96 samples).
 ///
@@ -518,7 +518,7 @@ impl<F: FFTImpl> NoiseSuppressor<F> {
 
         // Clamp output to valid range.
         for v in frame.iter_mut() {
-            *v = v.clamp(MIN_S16, MAX_S16);
+            *v = v.clamp(MIN_F32, MAX_F32);
         }
     }
 
@@ -571,7 +571,7 @@ impl<F: FFTImpl> NoiseSuppressor<F> {
     /// bands after upper band processing.
     pub fn clamp_frame(frame: &mut [f32; NS_FRAME_SIZE]) {
         for v in frame.iter_mut() {
-            *v = v.clamp(MIN_S16, MAX_S16);
+            *v = v.clamp(MIN_F32, MAX_F32);
         }
     }
 }

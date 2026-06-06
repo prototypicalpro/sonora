@@ -5,18 +5,80 @@
 //!
 //! C++ source: `webrtc/modules/audio_processing/ns/ns_fft.cc`
 
+use std::ops::Index;
+
+#[cfg(feature = "sonora-fft")]
 use sonora_fft::fft4g::Fft4g;
 
 use crate::config::{FFT_SIZE, FFT_SIZE_BY_2_PLUS_1};
 
+pub(crate) struct FFTPackedHelper<'d> {
+    ray: &'d [f32; FFT_SIZE]
+}
+
+pub(crate) struct FFTImagHelper<'d>(&'d FFTPackedHelper<'d>);
+
+impl<'d> Index<usize> for FFTImagHelper<'d> {
+    type Output = f32;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if index == 0 {
+            return &0.0;
+        }
+        else if index == FFT_SIZE_BY_2_PLUS_1 - 1 {
+            return &0.0;
+        }
+        
+        &self.0.ray[2*index + 1]
+    }
+}
+
+pub(crate) struct FFTRealHelper<'d>(&'d FFTPackedHelper<'d>);
+
+impl<'d> Index<usize> for FFTRealHelper<'d> {
+    type Output = f32;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if index == FFT_SIZE_BY_2_PLUS_1 - 1 {
+            return &self.0.ray[1];
+        }
+        
+        &self.0.ray[2*index]
+    }
+}
+
+impl<'d> FFTPackedHelper<'d> {
+    pub(crate) fn new(f: &'d[f32; FFT_SIZE]) -> FFTPackedHelper<'d> {
+        FFTPackedHelper { ray: f }
+    }
+
+    pub(crate) fn imag(&'d self) -> FFTImagHelper<'d> {
+        FFTImagHelper(self)
+    }
+
+    pub(crate) fn real(&'d self) -> FFTRealHelper<'d> {
+        FFTRealHelper(self)
+    }
+}
+
+pub trait FFTImpl {
+    // Ooura packing: time_data[0] = DC, time_data[1] = Nyquist,
+    // time_data[2k], time_data[2k+1] = real/imag of bin k.
+
+    fn fft(&mut self, input: &mut [f32; FFT_SIZE], output: &mut [f32; FFT_SIZE]);
+    fn ifft(&mut self, input: &mut [f32; FFT_SIZE], output: &mut [f32; FFT_SIZE]);
+}
+
 /// 256-point real FFT for noise suppression.
 ///
 /// Maintains pre-initialized twiddle tables for the Ooura fft4g algorithm.
+#[cfg(all(test, feature = "sonora-fft"))]
 #[derive(Debug)]
 pub(crate) struct NsFft {
     fft: Fft4g,
 }
 
+#[cfg(all(test, feature = "sonora-fft"))]
 impl Default for NsFft {
     fn default() -> Self {
         Self {
@@ -25,13 +87,14 @@ impl Default for NsFft {
     }
 }
 
-impl NsFft {
+#[cfg(all(test, feature = "sonora-fft"))]
+impl FFTImpl for NsFft {
     /// Forward FFT: time domain -> split real/imaginary arrays.
     ///
     /// `time_data` is transformed in-place (used as scratch), then the
     /// packed output is split into separate `real` and `imag` arrays
     /// of length `FFT_SIZE_BY_2_PLUS_1` (129).
-    pub(crate) fn fft(
+    fn fft(
         &mut self,
         time_data: &mut [f32; FFT_SIZE],
         real: &mut [f32; FFT_SIZE],
@@ -57,7 +120,7 @@ impl NsFft {
     ///
     /// Re-packs `real` and `imag` into the Ooura format, performs the
     /// inverse FFT, and scales the output by `2/N`.
-    pub(crate) fn ifft(&mut self, real: &[f32], imag: &[f32], time_data: &mut [f32; FFT_SIZE]) {
+    fn ifft(&mut self, real: &[f32], imag: &[f32], time_data: &mut [f32; FFT_SIZE]) {
         // Pack into Ooura format.
         time_data[0] = real[0];
         time_data[1] = real[FFT_SIZE_BY_2_PLUS_1 - 1];
@@ -76,7 +139,7 @@ impl NsFft {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "sonora-fft"))]
 mod tests {
     use super::*;
 

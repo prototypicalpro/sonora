@@ -11,7 +11,7 @@ use crate::config::{
 };
 use crate::fast_math::sqrt_fast_approximation;
 use crate::noise_estimator::NoiseEstimator;
-use crate::ns_fft::NsFft;
+use crate::ns_fft::{FFTImpl, FFTPackedHelper};
 use crate::speech_probability_estimator::{SignalAnalysis, SpeechProbabilityEstimator};
 use crate::suppression_params::SuppressionParams;
 use crate::wiener_filter::WienerFilter;
@@ -78,10 +78,11 @@ fn overlap_and_add(
 
 /// Compute magnitude spectrum from FFT output.
 fn compute_magnitude_spectrum(
-    real: &[f32; FFT_SIZE],
-    imag: &[f32; FFT_SIZE],
+    signal_complex: &FFTPackedHelper<'_>,
     signal_spectrum: &mut [f32; FFT_SIZE_BY_2_PLUS_1],
 ) {
+    let real = signal_complex.real();
+    let imag = signal_complex.imag();
     signal_spectrum[0] = real[0].abs() + 1.0;
     signal_spectrum[FFT_SIZE_BY_2_PLUS_1 - 1] = real[FFT_SIZE_BY_2_PLUS_1 - 1].abs() + 1.0;
 
@@ -227,8 +228,7 @@ impl ChannelState {
 /// on every call (macOS ARM stack probes show up as `_os_alloc_slow`).
 #[derive(Debug)]
 struct FilterBankState {
-    real: [f32; FFT_SIZE],
-    imag: [f32; FFT_SIZE],
+    signal_complex_packed: [f32; FFT_SIZE],
     extended_frame: [f32; FFT_SIZE],
     signal_spectrum: [f32; FFT_SIZE_BY_2_PLUS_1],
 }
@@ -236,8 +236,7 @@ struct FilterBankState {
 impl FilterBankState {
     fn new() -> Self {
         Self {
-            real: [0.0; FFT_SIZE],
-            imag: [0.0; FFT_SIZE],
+            signal_complex_packed: [0.0; FFT_SIZE],
             extended_frame: [0.0; FFT_SIZE],
             signal_spectrum: [0.0; FFT_SIZE_BY_2_PLUS_1],
         }
@@ -268,11 +267,11 @@ impl FilterBankState {
 /// ns.process(&mut frame);
 /// ```
 #[derive(Debug)]
-pub struct NoiseSuppressor {
+pub struct NoiseSuppressor<F: FFTImpl + Default> {
     num_analyzed_frames: i32,
     num_bands: usize,
     suppression_params: &'static SuppressionParams,
-    fft: NsFft,
+    fft: F,
     channel: ChannelState,
     filter_bank_state: FilterBankState,
     /// Upper band gain computed during the most recent `process()` call.
@@ -280,7 +279,7 @@ pub struct NoiseSuppressor {
     cached_upper_band_gain: f32,
 }
 
-impl NoiseSuppressor {
+impl<F: FFTImpl + Default> NoiseSuppressor<F> {
     /// Create a new single-band noise suppressor with the given configuration.
     pub fn new(config: NsConfig) -> Self {
         let suppression_params = SuppressionParams::for_level(config.target_level);
@@ -288,7 +287,7 @@ impl NoiseSuppressor {
             num_analyzed_frames: -1,
             num_bands: 1,
             suppression_params,
-            fft: NsFft::default(),
+            fft: F::default(),
             channel: ChannelState::new(suppression_params, 1),
             filter_bank_state: FilterBankState::new(),
             cached_upper_band_gain: 1.0,
@@ -307,7 +306,7 @@ impl NoiseSuppressor {
             num_analyzed_frames: -1,
             num_bands,
             suppression_params,
-            fft: NsFft::default(),
+            fft: F::default(),
             channel: ChannelState::new(suppression_params, num_bands),
             filter_bank_state: FilterBankState::new(),
             cached_upper_band_gain: 1.0,
@@ -366,14 +365,17 @@ impl NoiseSuppressor {
 
         // Compute FFT and magnitude spectrum.
         self.fft
-            .fft(&mut fbs.extended_frame, &mut fbs.real, &mut fbs.imag);
+            .fft(&mut fbs.extended_frame, &mut fbs.signal_complex_packed);
+        let packed_helper = FFTPackedHelper::new(&fbs.signal_complex_packed);
+        let real = packed_helper.real();
+        let imag = packed_helper.imag();
 
-        compute_magnitude_spectrum(&fbs.real, &fbs.imag, &mut fbs.signal_spectrum);
+        compute_magnitude_spectrum(&packed_helper, &mut fbs.signal_spectrum);
 
         // Compute energies.
         let mut signal_energy = 0.0f32;
         for i in 0..FFT_SIZE_BY_2_PLUS_1 {
-            signal_energy += fbs.real[i] * fbs.real[i] + fbs.imag[i] * fbs.imag[i];
+            signal_energy += real[i] * real[i] + imag[i] * imag[i];
         }
         signal_energy /= FFT_SIZE_BY_2_PLUS_1 as f32;
 
@@ -445,9 +447,10 @@ impl NoiseSuppressor {
 
         // FFT and magnitude spectrum.
         self.fft
-            .fft(&mut fbs.extended_frame, &mut fbs.real, &mut fbs.imag);
+            .fft(&mut fbs.extended_frame, &mut fbs.signal_complex_packed);
+        let signal_complex = FFTPackedHelper::new(&fbs.signal_complex_packed);
 
-        compute_magnitude_spectrum(&fbs.real, &fbs.imag, &mut fbs.signal_spectrum);
+        compute_magnitude_spectrum(&signal_complex, &mut fbs.signal_spectrum);
 
         // Update the Wiener filter.
         ch.wiener_filter.update(
@@ -473,13 +476,24 @@ impl NoiseSuppressor {
         // Apply the filter to the frequency domain.
         let filter = ch.wiener_filter.filter();
 
+        // f[0] applies to t[0]
+        // f[N/2] applies to t[1],
+        // f[k] applies to t[2k], t[2k + 1]         
         for (i, &f) in filter.iter().enumerate() {
-            fbs.real[i] *= f;
-            fbs.imag[i] *= f;
+            if i == 0 {
+                fbs.signal_complex_packed[i] *= f;
+            }
+            else if i == FFT_SIZE_BY_2_PLUS_1 - 1 {
+                fbs.signal_complex_packed[1] *= f;
+            }
+            else {
+                fbs.signal_complex_packed[i * 2] *= f;
+                fbs.signal_complex_packed[i * 2 + 1] *= f;
+            }
         }
 
         // Inverse FFT.
-        self.fft.ifft(&fbs.real, &fbs.imag, &mut fbs.extended_frame);
+        self.fft.ifft(&mut fbs.signal_complex_packed, &mut fbs.extended_frame);
 
         let energy_after_filtering = compute_energy(&fbs.extended_frame);
 

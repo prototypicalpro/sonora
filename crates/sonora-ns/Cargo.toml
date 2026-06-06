@@ -14,4 +14,4 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-sonora-fft = { workspace = true }
+sonora-fft = { workspace = true, optional = true }
